@@ -113,6 +113,7 @@
     else $app.innerHTML = gameView();
 
     mountPlayers();
+    if (!document.getElementById('guessInput')) sug.items = [];
     if (keep) {
       const el = document.getElementById(keep.id);
       if (el) {
@@ -121,7 +122,59 @@
         try { if (keep.start != null) el.setSelectionRange(keep.start, keep.end); } catch { /* not a text input */ }
       }
     }
+    if (sug.items.length && document.activeElement?.id === 'guessInput') drawSuggest();
   }
+
+  // ---- guess autocomplete ----------------------------------------------------
+  const sug = { items: [], active: -1, timer: 0, seq: 0, last: '' };
+  function hideSuggest() {
+    sug.items = []; sug.active = -1; sug.seq++;
+    clearTimeout(sug.timer);
+    const ul = document.getElementById('suggestList');
+    if (ul) { ul.hidden = true; ul.innerHTML = ''; }
+    document.getElementById('guessInput')?.setAttribute('aria-expanded', 'false');
+  }
+  function drawSuggest() {
+    const ul = document.getElementById('suggestList');
+    const input = document.getElementById('guessInput');
+    if (!ul || !input) return;
+    if (!sug.items.length) { ul.hidden = true; ul.innerHTML = ''; input.setAttribute('aria-expanded', 'false'); return; }
+    ul.innerHTML = sug.items.map((m, i) => `<li role="option" id="sug${i}" data-sug="${i}" aria-selected="${i === sug.active}" class="${i === sug.active ? 'on' : ''}">
+      <span>${esc(m.title)}</span>${m.year ? `<span class="sug-year">${m.year}</span>` : ''}</li>`).join('');
+    ul.hidden = false;
+    input.setAttribute('aria-expanded', 'true');
+    if (sug.active >= 0) input.setAttribute('aria-activedescendant', `sug${sug.active}`);
+    else input.removeAttribute('aria-activedescendant');
+  }
+  function querySuggest(text) {
+    const q = text.trim();
+    clearTimeout(sug.timer);
+    if (q.length < 2) { hideSuggest(); return; }
+    if (q === sug.last && sug.items.length) return;
+    const seq = ++sug.seq;
+    sug.timer = setTimeout(async () => {
+      const res = await send('suggest', { query: q });
+      if (seq !== sug.seq) return; // a newer keystroke won
+      sug.last = q;
+      sug.items = res.ok ? (res.results || []) : [];
+      sug.active = -1;
+      drawSuggest();
+    }, 180);
+  }
+  function chooseSuggest(i) {
+    const m = sug.items[i];
+    const input = document.getElementById('guessInput');
+    if (!m || !input) return;
+    input.value = m.title;
+    sug.last = m.title;
+    hideSuggest();
+    input.focus();
+  }
+  $app.addEventListener('pointerdown', (e) => {
+    const li = e.target.closest?.('[data-sug]');
+    if (li) { e.preventDefault(); chooseSuggest(Number(li.dataset.sug)); }
+    else if (!e.target.closest?.('.combo')) hideSuggest();
+  });
 
   function renderBar() {
     const v = S.view;
@@ -282,7 +335,13 @@
   }
 
   // ---- frames: an image, or a paused moment of the official trailer --------
-  const fmtSec = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+
+  const LOADING = '<span class="load"><span class="reel-spin" aria-hidden="true"></span><span>Loading the moment…</span></span>';
+  // 'slow': the moment plays muted at quarter speed (no YouTube play icon).
+  // 'frozen': one paused frame; YouTube draws a play icon, hidden by a dot.
+  const MOMENT_MODE = 'slow';
+  // Seconds of footage in each slow-motion loop (4x longer on screen at 0.25x).
+  const LOOP_SECONDS = 2;
 
   function momentHtml(a, opts = {}) {
     const v = S.view;
@@ -291,14 +350,13 @@
       return `<div class="screen wide${opts.small ? ' small' : ''}">
         <div class="yt-crop"><div class="yt-slot" data-key="${esc(a.video)}" data-src="${a.source === 'clip' ? 'CLIP' : 'TRAILER'}" data-at="${Number(a.at)}"></div></div>
         <div class="yt-shield" aria-hidden="true"></div>
-        <div class="yt-cover">Rolling the trailer…</div>
-        <span class="tc" hidden>TRAILER</span>
+        <div class="yt-cover">${LOADING}</div>
       </div>`;
     }
-    const label = a.minute ? tc(a.minute) : 'STILL';
+    // Only own-file rounds show a timecode (the guesser chose that minute).
     return `<div class="screen${opts.anim ? ' reveal-in' : ''}">
       ${safeUrl(a.frame) ? `<img src="${esc(safeUrl(a.frame))}" alt="${opts.alt || 'A frame from the secret movie'}">` : '<div class="waiting">No frame</div>'}
-      <span class="tc">${label}</span>
+      ${a.minute ? `<span class="tc">${tc(a.minute)}</span>` : ''}
     </div>`;
   }
 
@@ -333,8 +391,9 @@
       el.dataset.mounted = '1';
       const screen = el.closest('.screen');
       const frac = Number(el.dataset.at) || 0;
-      const srcLabel = el.dataset.src || 'TRAILER';
-      let target = 0, paused = false, ready = false;
+      let target = 0, paused = false, ready = false, shown = false, loopTimer = null;
+      if (MOMENT_MODE === 'frozen') screen.classList.add('frozen');
+      const reveal = () => { clearTimeout(stuck); screen.classList.add('yt-on'); };
       const roll = (p) => { p.mute(); p.seekTo(target, true); p.playVideo(); };
       // Some browsers block autoplay. If the moment hasn't appeared after a few
       // seconds, offer a tap: a click on our own button counts as permission.
@@ -344,7 +403,7 @@
         if (!c) return;
         c.innerHTML = '<button class="btn btn-primary" type="button">Tap to show the moment</button>';
         c.querySelector('button').addEventListener('click', () => {
-          c.textContent = 'Rolling the trailer…';
+          c.innerHTML = LOADING;
           if (ready) roll(player);
         });
       }, 4000);
@@ -361,17 +420,34 @@
             roll(e.target);
           },
           onStateChange: (e) => {
+            if (MOMENT_MODE === 'slow') {
+              if (e.data === YT.PlayerState.PLAYING) {
+                e.target.setPlaybackRate(0.25);
+                // First start waits a moment for the rate change; a loop restart
+                // (about 0.3 s of buffering) shows again straight away.
+                if (shown) reveal(); else { shown = true; setTimeout(reveal, 400); }
+                // After LOOP_SECONDS of footage, go back to the start of the
+                // moment, behind the loading cover.
+                clearInterval(loopTimer);
+                loopTimer = setInterval(() => {
+                  if (!screen.isConnected) return clearInterval(loopTimer);
+                  if (e.target.getCurrentTime() > target + LOOP_SECONDS) {
+                    screen.classList.remove('yt-on');
+                    e.target.seekTo(target, true);
+                  }
+                }, 250);
+              } else if (e.data === YT.PlayerState.ENDED) {
+                screen.classList.remove('yt-on');
+                roll(e.target);
+              }
+              return;
+            }
             if (e.data === YT.PlayerState.PLAYING && !paused) {
               paused = true;
               setTimeout(() => {
                 e.target.pauseVideo();
                 e.target.seekTo(target, true);
-                setTimeout(() => {
-                  clearTimeout(stuck);
-                  screen.classList.add('yt-on');
-                  const tcEl = screen.querySelector('.tc');
-                  if (tcEl) { tcEl.textContent = `${srcLabel} ${fmtSec(target)}`; tcEl.hidden = false; }
-                }, 350);
+                setTimeout(reveal, 350);
               }, 250);
             }
           },
@@ -517,7 +593,7 @@
             <h2>Check the ${trailer ? 'moment' : 'frame'}</h2>
           </div>
           <p class="muted">${trailer
-            ? `A random moment from ${last.source === 'clip' ? 'an official clip' : 'the official trailer'}. If it shows the title, a logo or anything that gives the movie away, roll a new one.`
+            ? `A random moment from ${last.source === 'clip' ? 'an official clip' : 'the official trailer'}, playing silently in slow motion. If it shows the title, a logo or anything that gives the movie away, roll a new one.`
             : 'This movie has no trailer, so this is a still from the movie database. If it gives the movie away (fan posters, title cards), swap it.'}</p>
           <div class="row">
             <button class="btn btn-primary btn-big" data-act="approve">Show it to ${esc(nameOf(v.guesserId))}</button>
@@ -553,10 +629,13 @@
           <p class="eyebrow">Try ${tryNo} of ${v.maxAttempts} · worth ${v.points[tryNo - 1]} point${v.points[tryNo - 1] === 1 ? '' : 's'}</p>
           ${pips()}
         </div>
-        <label class="field">The exact movie title
-          <input class="input" id="guessInput" maxlength="120" autocomplete="off" placeholder="e.g. The Avengers" autofocus>
-        </label>
-        <p class="muted" style="font-size:14px">Spelling must match the full title. Capitals, punctuation and a leading "The" don't matter; sequels need their number or subtitle.</p>
+        <label class="field" for="guessInput">The exact movie title</label>
+        <div class="combo">
+          <input class="input" id="guessInput" maxlength="120" autocomplete="off" placeholder="Start typing a title" autofocus
+            role="combobox" aria-autocomplete="list" aria-controls="suggestList" aria-expanded="false">
+          <ul class="suggest" id="suggestList" role="listbox" hidden></ul>
+        </div>
+        <p class="muted" style="font-size:14px">Pick from the list as you type. Sequels need their number or subtitle.</p>
         <div class="row">
           <button class="btn btn-primary btn-big" type="submit" ${S.busy ? 'disabled' : ''}>Lock in guess</button>
           <button class="btn btn-ghost" type="button" data-act="giveup">Give up</button>
@@ -809,6 +888,7 @@
       const input = document.getElementById('guessInput');
       const text = input.value.trim();
       if (!text) return toast('Type a movie title.', true);
+      hideSuggest();
       S.busy = true; render();
       const res = await send('guess', { text });
       S.busy = false;
@@ -835,6 +915,8 @@
       t.value = t.value.toUpperCase().replace(/[^A-Z]/g, '');
     } else if (t.id === 'searchInput') {
       S.browse.query = t.value; // remembered, applied on submit
+    } else if (t.id === 'guessInput') {
+      querySuggest(t.value);
     }
   });
 
@@ -851,6 +933,17 @@
   });
 
   $app.addEventListener('keydown', (e) => {
+    if (e.target.id === 'guessInput' && sug.items.length) {
+      const n = sug.items.length;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        sug.active = e.key === 'ArrowDown' ? (sug.active + 1) % n : (sug.active <= 0 ? n - 1 : sug.active - 1);
+        drawSuggest();
+        return;
+      }
+      if (e.key === 'Enter' && sug.active >= 0) { e.preventDefault(); chooseSuggest(sug.active); return; }
+      if (e.key === 'Escape') { e.preventDefault(); hideSuggest(); return; }
+    }
     if (e.key === 'Enter' && e.target.id === 'codeInput') $app.querySelector('[data-act="join"]').click();
     if (e.key === 'Enter' && e.target.id === 'nameInput') {
       const code = document.getElementById('codeInput')?.value;

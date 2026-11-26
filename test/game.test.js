@@ -109,3 +109,20 @@ test('trailer rounds use random moments the picker can reroll', async () => {
   r.guess('bbbbbbbb', 'orbit of glass');
   assert.equal(r.player('bbbbbbbb').score, 2);
 });
+
+test('clip verification rejects sequels, TV and wrong years', () => {
+  const { verifyClip } = require('../lib/movies');
+  const dk = { names: ['dark knight'], rivals: ['dark knight rises', 'dark knight returns part 1'], year: 2008 };
+  assert.ok(verifyClip('The Dark Knight (2008) - Hospital Explosion Scene (8/10) | Movieclips', dk));
+  assert.ok(!verifyClip('The Dark Knight Rises (2012) - Bane Fight Scene | Movieclips', dk));
+  assert.ok(!verifyClip('The Dark Knight (2012) scene', dk));
+  assert.ok(!verifyClip('Batman Begins (2005) - Training Scene', dk));
+  assert.ok(!verifyClip('The Dark Knight Season 2 Episode 4', dk));
+  const fargo = { names: ['fargo'], rivals: [], year: 1996, tvSameName: true };
+  assert.ok(!verifyClip('Fargo - Best Scene', fargo));
+  assert.ok(verifyClip('Fargo (1996) - Wood Chipper Scene | Movieclips', fargo));
+  const { normalizeTitle: nt } = require('../lib/match');
+  const hp = { names: [nt("Harry Potter and the Philosopher's Stone"), nt("Harry Potter and the Sorcerer's Stone")], rivals: [], year: 2001 };
+  assert.ok(verifyClip("Harry Potter and the Sorcerer's Stone (2001) - Gringotts Scene", hp));
+  assert.ok(!verifyClip('Harry Potter and the Chamber of Secrets (2002) - Dobby', hp));
+});

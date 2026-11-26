@@ -132,6 +132,13 @@ io.on('connection', (socket) => {
     return out;
   }));
 
+  socket.on('suggest', guard(async ({ query }) => {
+    currentRoom();
+    const q = String(query || '').trim().slice(0, 80);
+    if (q.length < 2) return { results: [] };
+    return { results: await provider.suggest(q) };
+  }));
+
   socket.on('disconnect', () => leaveCurrent());
 });
 

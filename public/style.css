@@ -185,11 +185,13 @@ label.field { display: grid; gap: 6px; font-size: 14px; color: var(--dim); }
 .screen.yt-on .yt-cover { opacity: 0; pointer-events: none; }
 /* YouTube draws a play icon on a paused video. This is a still, not a video,
    so a small frosted disc hides the icon. */
-.screen.yt-on .yt-shield::after {
+.screen.frozen.yt-on .yt-shield::after {
   content: ""; position: absolute; left: 50%; top: 50%; width: 92px; height: 92px; transform: translate(-50%, -50%);
   border-radius: 50%; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); background: rgba(0, 0, 0, .25);
 }
 .screen .tc { z-index: 4; }
+.yt-cover .load { display: grid; justify-items: center; gap: 12px; }
+.screen:not(.yt-on) .yt-cover { opacity: 1; }
 .thumb-label { display: grid; place-items: center; height: 100%; font: 600 12px var(--mono); color: var(--dim); letter-spacing: .08em; text-transform: uppercase; }
 
 /* ---- minute dial ---- */
@@ -260,3 +262,12 @@ input[type="range"] { width: 100%; accent-color: var(--tungsten); height: 28px; 
   .reveal-card, .chosen { grid-template-columns: 80px 1fr; }
   .screen { aspect-ratio: 16 / 9; }
 }
+
+/* guess autocomplete */
+.combo { position: relative; }
+.suggest { position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 20; margin: 0; padding: 4px; list-style: none;
+  background: var(--room); color: var(--screen); border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0,0,0,.45); max-height: 300px; overflow-y: auto; }
+.suggest li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: 8px; cursor: pointer; }
+.suggest li:hover, .suggest li.on { background: rgba(255,201,102,.16); color: var(--tungsten); }
+.sug-year { opacity: .6; font-variant-numeric: tabular-nums; flex-shrink: 0; }
