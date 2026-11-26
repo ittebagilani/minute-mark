@@ -339,12 +339,21 @@
   const LOADING = '<span class="load"><span class="reel-spin" aria-hidden="true"></span><span>Loading the moment…</span></span>';
   // 'slow': the moment plays muted at quarter speed (no YouTube play icon).
   // 'frozen': one paused frame; YouTube draws a play icon, hidden by a dot.
-  const MOMENT_MODE = 'slow';
+  // 'still': one of YouTube's own frame images of the video (no player at all).
+  const MOMENT_MODE = 'still';
   // Seconds of footage in each slow-motion loop (4x longer on screen at 0.25x).
   const LOOP_SECONDS = 2;
 
   function momentHtml(a, opts = {}) {
     const v = S.view;
+    if (a.kind === 'trailer' && MOMENT_MODE === 'still') {
+      if (!a.video || !a.shot) return '<div class="screen wide"><div class="waiting">No moment yet</div></div>';
+      const base = `https://i.ytimg.com/vi/${encodeURIComponent(a.video)}/`;
+      return `<div class="screen wide yt-still${opts.small ? ' small' : ''}${opts.anim ? ' reveal-in' : ''}">
+        <img src="${base}maxres${a.shot}.jpg" data-fallback="${base}hq${a.shot}.jpg" alt="${opts.alt || 'A frame from the secret movie'}" draggable="false">
+        <div class="yt-cover">${LOADING}</div>
+      </div>`;
+    }
     if (a.kind === 'trailer') {
       if (!a.video || a.at == null) return '<div class="screen wide"><div class="waiting">No moment yet</div></div>';
       return `<div class="screen wide${opts.small ? ' small' : ''}">
@@ -378,7 +387,25 @@
   // Mount a muted player for each trailer slot, jump to the moment, let it
   // render one frame, then pause. The shield on top blocks clicks so nobody
   // can scrub, unpause or open the video on YouTube.
+  function wireStills() {
+    for (const img of $app.querySelectorAll('.yt-still img:not([data-wired])')) {
+      img.dataset.wired = '1';
+      const screen = img.closest('.screen');
+      const done = () => {
+        // YouTube answers a missing size with a 120px grey placeholder.
+        if (img.naturalWidth > 120) return screen.classList.add('yt-on');
+        if (img.dataset.fallback) { const f = img.dataset.fallback; delete img.dataset.fallback; img.src = f; return; }
+        const c = screen.querySelector('.yt-cover');
+        if (c) c.textContent = 'This frame is not available. The picker can reroll.';
+      };
+      img.addEventListener('load', done);
+      img.addEventListener('error', done);
+      if (img.complete) done();
+    }
+  }
+
   async function mountPlayers() {
+    wireStills();
     const slots = [...$app.querySelectorAll('.yt-slot:not([data-mounted])')];
     if (!slots.length) return;
     let YT;
@@ -593,7 +620,7 @@
             <h2>Check the ${trailer ? 'moment' : 'frame'}</h2>
           </div>
           <p class="muted">${trailer
-            ? `A random moment from ${last.source === 'clip' ? 'an official clip' : 'the official trailer'}, playing silently in slow motion. If it shows the title, a logo or anything that gives the movie away, roll a new one.`
+            ? `A random moment from ${last.source === 'clip' ? 'an official clip' : 'the official trailer'}. If it shows the title, a logo or anything that gives the movie away, roll a new one.`
             : 'This movie has no trailer, so this is a still from the movie database. If it gives the movie away (fan posters, title cards), swap it.'}</p>
           <div class="row">
             <button class="btn btn-primary btn-big" data-act="approve">Show it to ${esc(nameOf(v.guesserId))}</button>
@@ -650,7 +677,7 @@
     if (!list.length) return '';
     return `<div class="stack" style="gap:10px"><p class="eyebrow">Frames so far</p><div class="reel">${list.map((a) => `
       <div class="reel-item">
-        <div class="thumb">${a.kind === 'trailer' ? `<span class="thumb-label">${a.source === 'clip' ? 'Clip' : 'Trailer'} moment</span>` : safeUrl(a.frame) ? `<img src="${esc(safeUrl(a.frame))}" alt="Earlier frame" loading="lazy">` : ''}</div>
+        <div class="thumb">${a.kind === 'trailer' && a.shot ? `<img src="https://i.ytimg.com/vi/${encodeURIComponent(a.video)}/hq${a.shot}.jpg" alt="Earlier frame" loading="lazy">` : a.kind === 'trailer' ? `<span class="thumb-label">${a.source === 'clip' ? 'Clip' : 'Trailer'} moment</span>` : safeUrl(a.frame) ? `<img src="${esc(safeUrl(a.frame))}" alt="Earlier frame" loading="lazy">` : ''}</div>
         <div class="cap">${a.minute ? `<span class="mono">${tc(a.minute)}</span> · ` : ''}${a.correct ? '<span class="ok">✓</span>' : '<span class="x">✗</span>'} ${esc(a.guess)}</div>
       </div>`).join('')}</div></div>`;
   }
