@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: minute-mark
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: TMDB_API_KEY
+        sync: false
