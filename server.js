@@ -14,7 +14,7 @@ app.disable('x-powered-by');
 // Revalidate every load so players never run an old client after a deploy.
 app.use(express.static(path.join(__dirname, 'public'), { maxAge: 0, etag: true, lastModified: true, setHeaders: (res) => res.set('Cache-Control', 'no-cache') }));
 
-app.get('/api/meta', (_req, res) => res.json({ genres: GENRES, provider: provider.name, year: new Date().getFullYear() }));
+app.get('/api/meta', (_req, res) => res.json({ genres: GENRES, provider: provider.name, clips: !!provider.ytKey, year: new Date().getFullYear() }));
 app.get('/healthz', (_req, res) => res.send('ok'));
 
 app.get('/demo/poster/:id.svg', (req, res) => res.type('image/svg+xml').send(demoSvg(req.params.id, 0, true)));

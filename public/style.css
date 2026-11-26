@@ -176,7 +176,7 @@ label.field { display: grid; gap: 6px; font-size: 14px; color: var(--dim); }
    title bar and logo fall outside it, and a shield blocks every click. */
 .screen.wide { aspect-ratio: 16 / 9; }
 .yt-crop { position: absolute; inset: 0; overflow: hidden; }
-.yt-crop iframe, .yt-crop .yt-slot { position: absolute; width: 124%; height: 124%; left: -12%; top: -12%; border: 0; pointer-events: none; }
+.yt-crop iframe, .yt-crop .yt-slot { position: absolute; width: 132%; height: 140%; left: -16%; top: -20%; border: 0; pointer-events: none; }
 .yt-shield { position: absolute; inset: 0; z-index: 2; }
 .yt-cover {
   position: absolute; inset: 0; z-index: 3; display: grid; place-items: center; text-align: center; padding: 20px;
