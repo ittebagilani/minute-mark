@@ -40,17 +40,25 @@ test('a full game with rotation and scoring', async () => {
   assert.equal(r.viewFor('bbbbbbbb').movie, null);
   assert.equal(r.viewFor('aaaaaaaa').movie.title, 'Neon Harbor');
   r.chooseMinute('bbbbbbbb', 15);
-  assert.ok(r.attempts[0].frame);
+  assert.equal(r.phase, 'capture');
+  assert.equal(r.viewFor('bbbbbbbb').attempts[0].frame, null);
+  const first = r.attempts[0].frame;
+  r.swapFrame('aaaaaaaa');
+  assert.notEqual(r.attempts[0].frame, first);
+  assert.throws(() => r.approveFrame('bbbbbbbb'), /picker/);
+  r.approveFrame('aaaaaaaa');
+  assert.ok(r.viewFor('bbbbbbbb').attempts[0].frame);
   r.guess('bbbbbbbb', 'Neon Harbour'); // wrong spelling
   assert.equal(r.phase, 'minute');
   r.chooseMinute('bbbbbbbb', 40);
+  r.approveFrame('aaaaaaaa');
   r.guess('bbbbbbbb', 'neon harbor');
   assert.equal(r.phase, 'reveal');
   assert.equal(r.player('bbbbbbbb').score, 2);
   r.next('aaaaaaaa');
   assert.equal(r.pickerId, 'bbbbbbbb'); assert.equal(r.guesserId, 'cccccccc');
   await r.pick('bbbbbbbb', { movieId: 3 });
-  for (const m of [5, 10, 20]) { r.chooseMinute('cccccccc', m); r.guess('cccccccc', 'nope'); }
+  for (const m of [5, 10, 20]) { r.chooseMinute('cccccccc', m); r.approveFrame('bbbbbbbb'); r.guess('cccccccc', 'nope'); }
   assert.equal(r.player('bbbbbbbb').score, 1 + 2);
   r.next('aaaaaaaa');
   assert.equal(r.pickerId, 'cccccccc'); assert.equal(r.guesserId, 'aaaaaaaa');

@@ -407,6 +407,24 @@
   function captureView() {
     const v = S.view;
     const last = v.attempts[v.attempts.length - 1];
+    if (v.you === v.pickerId && !v.useFile) {
+      return `<div class="screen">
+          ${safeUrl(last.frame) ? `<img src="${esc(safeUrl(last.frame))}" alt="Candidate frame at minute ${last.minute}">` : ''}
+          <span class="tc">${tc(last.minute)}</span>
+        </div>
+        <div class="panel stack">
+          <div>
+            <p class="eyebrow">Only you can see this · minute ${last.minute}</p>
+            <h2>Check the frame</h2>
+          </div>
+          <p class="muted">Movie databases sometimes hold fan posters or title cards. If this picture gives the movie away, swap it for another still.</p>
+          <div class="row">
+            <button class="btn btn-primary btn-big" data-act="approve">Show it to ${esc(nameOf(v.guesserId))}</button>
+            <button class="btn" data-act="swap" ${v.stillsLeft > 0 ? '' : 'disabled'}>Swap for another still</button>
+            <span class="muted">${v.stillsLeft > 0 ? `${v.stillsLeft} more to choose from` : 'No more stills'}</span>
+          </div>
+        </div>`;
+    }
     if (v.you === v.pickerId) {
       const ready = !!S.file.file;
       return `<div class="panel stack">
@@ -418,7 +436,7 @@
              <input class="input" type="file" id="videoFile" accept="video/*">`}
       </div>`;
     }
-    return `<div class="screen"><div class="waiting">Rolling to ${tc(last.minute)}…<br>${esc(nameOf(v.pickerId))} is grabbing the frame.</div></div>`;
+    return `<div class="screen"><div class="waiting">Rolling to ${tc(last.minute)}…<br>${esc(nameOf(v.pickerId))} is ${v.useFile ? 'grabbing' : 'checking'} the frame.</div></div>`;
   }
 
   function guessView() {
@@ -527,7 +545,7 @@
       loadMovies(1);
     }
     if (v.phase === 'minute' && v.you === v.guesserId) S.minute = null;
-    if (v.phase === 'capture' && v.you === v.pickerId) captureFrame();
+    if (v.phase === 'capture' && v.you === v.pickerId && v.useFile) captureFrame();
   }
 
   async function loadMovies(page, append = false) {
@@ -643,6 +661,8 @@
       case 'skip': await send('skip'); break;
       case 'next': await send('next'); break;
       case 'giveup': await send('giveup'); break;
+      case 'swap': await send('swap'); break;
+      case 'approve': await send('approve'); break;
       case 'select': {
         const m = S.browse.results.find((x) => x.id === Number(el.dataset.id));
         S.browse.selected = S.browse.selected && S.browse.selected.id === m.id ? null : m;
