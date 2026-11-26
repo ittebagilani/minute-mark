@@ -193,11 +193,11 @@
       <div class="home-hero">
         <p class="eyebrow">A party game for 2 to 16 film fans</p>
         <h1>One frame.<br><span>Name the film.</span></h1>
-        <p class="lede">One player secretly picks a movie. The next sees one frozen moment from its trailer or clips and has three tries to name the exact title.</p>
+        <p class="lede">One player secretly picks a movie. The next sees one frozen frame from its trailer and has three tries to name the exact title.</p>
         <ol class="how">
           <li><span><b>The host sets the shelf:</b> a year or range of years and any mix of genres.</span></li>
           <li><span><b>The picker</b> chooses a movie in secret from that shelf.</span></li>
-          <li><span><b>The guesser</b> sees a random paused moment from the movie's official trailer or clips. Every miss shows a new moment.</span></li>
+          <li><span><b>The guesser</b> sees a random frame from the movie's official trailer. Every miss shows a new frame.</span></li>
           <li><span><b>Exact title wins:</b> 3 points on the first try, 2 on the second, 1 on the third. Stump them and the picker scores 1.</span></li>
         </ol>
       </div>
@@ -620,7 +620,7 @@
             <h2>Check the ${trailer ? 'moment' : 'frame'}</h2>
           </div>
           <p class="muted">${trailer
-            ? `A random moment from ${last.source === 'clip' ? 'an official clip' : 'the official trailer'}. If it shows the title, a logo or anything that gives the movie away, roll a new one.`
+            ? `A random frame from the official trailer. If it shows the title, a logo or anything that gives the movie away, roll a new one.`
             : 'This movie has no trailer, so this is a still from the movie database. If it gives the movie away (fan posters, title cards), swap it.'}</p>
           <div class="row">
             <button class="btn btn-primary btn-big" data-act="approve">Show it to ${esc(nameOf(v.guesserId))}</button>
