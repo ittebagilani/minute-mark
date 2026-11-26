@@ -39,7 +39,6 @@ test('a full game with rotation and scoring', async () => {
   await r.pick('aaaaaaaa', { movieId: 2 });
   assert.equal(r.viewFor('bbbbbbbb').movie, null);
   assert.equal(r.viewFor('aaaaaaaa').movie.title, 'Neon Harbor');
-  r.chooseMinute('bbbbbbbb', 15);
   assert.equal(r.phase, 'capture');
   assert.equal(r.viewFor('bbbbbbbb').attempts[0].frame, null);
   const first = r.attempts[0].frame;
@@ -49,8 +48,7 @@ test('a full game with rotation and scoring', async () => {
   r.approveFrame('aaaaaaaa');
   assert.ok(r.viewFor('bbbbbbbb').attempts[0].frame);
   r.guess('bbbbbbbb', 'Neon Harbour'); // wrong spelling
-  assert.equal(r.phase, 'minute');
-  r.chooseMinute('bbbbbbbb', 40);
+  assert.equal(r.phase, 'capture');
   r.approveFrame('aaaaaaaa');
   r.guess('bbbbbbbb', 'neon harbor');
   assert.equal(r.phase, 'reveal');
@@ -58,7 +56,7 @@ test('a full game with rotation and scoring', async () => {
   r.next('aaaaaaaa');
   assert.equal(r.pickerId, 'bbbbbbbb'); assert.equal(r.guesserId, 'cccccccc');
   await r.pick('bbbbbbbb', { movieId: 3 });
-  for (const m of [5, 10, 20]) { r.chooseMinute('cccccccc', m); r.approveFrame('bbbbbbbb'); r.guess('cccccccc', 'nope'); }
+  for (let k = 0; k < 3; k++) { r.approveFrame('bbbbbbbb'); r.guess('cccccccc', 'nope'); }
   assert.equal(r.player('bbbbbbbb').score, 1 + 2);
   r.next('aaaaaaaa');
   assert.equal(r.pickerId, 'cccccccc'); assert.equal(r.guesserId, 'aaaaaaaa');
@@ -82,4 +80,30 @@ test('file mode needs a frame from the picker', async () => {
   assert.equal(r.frameData(name), 'data:image/jpeg;base64,AAAA');
   r.guess('bbbbbbbb', 'avengers');
   assert.equal(r.player('bbbbbbbb').score, 3);
+});
+
+test('trailer rounds use random moments the picker can reroll', async () => {
+  const prov = new DemoProvider();
+  const orig = prov.details.bind(prov);
+  prov.details = async (id) => ({ ...(await orig(id)), trailerKey: 'abcDEF12345' });
+  const r = new Room('TRLR', prov);
+  r.join('aaaaaaaa', 'Ann'); r.join('bbbbbbbb', 'Ben');
+  r.start('aaaaaaaa');
+  await r.pick('aaaaaaaa', { movieId: 4 });
+  assert.equal(r.phase, 'capture');
+  const v = r.viewFor('bbbbbbbb');
+  assert.equal(v.attempts[0].at, null);
+  assert.equal(v.attempts[0].kind, 'trailer');
+  const at = r.attempts[0].at;
+  r.swapFrame('aaaaaaaa');
+  assert.notEqual(r.attempts[0].at, at);
+  r.approveFrame('aaaaaaaa');
+  assert.equal(r.viewFor('bbbbbbbb').trailer, 'abcDEF12345');
+  assert.ok(r.viewFor('bbbbbbbb').attempts[0].at >= 0);
+  r.guess('bbbbbbbb', 'wrong');
+  assert.equal(r.phase, 'capture');
+  assert.equal(r.attempts.length, 2);
+  r.approveFrame('aaaaaaaa');
+  r.guess('bbbbbbbb', 'orbit of glass');
+  assert.equal(r.player('bbbbbbbb').score, 2);
 });

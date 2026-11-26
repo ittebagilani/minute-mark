@@ -4,7 +4,7 @@ An online party game for 2 to 16 players. Friends join a room with a 4-letter co
 
 1. **The host sets the shelf:** a year or range of years, any mix of genres, and how many turns each player gets.
 2. **The picker** secretly chooses a movie from that shelf.
-3. **The guesser** (who doesn't know the movie or genre) calls a minute, like minute 15, and sees the frame at that mark.
+3. **The guesser** (who doesn't know the movie or genre) sees one random, paused moment from the movie's official YouTube trailer. Each miss shows a new moment.
 4. **Exact title wins:** 3 points on the first try, 2 on the second, 1 on the third. If all three tries miss, the picker scores 1 for the stump.
 
 Roles rotate every round, so everyone picks and everyone guesses.
@@ -13,12 +13,13 @@ Guesses must name the full title. Capitals, punctuation, accents, `&`/`and`, a l
 
 ## Where the frames come from
 
-No public service hands out the frame at an exact minute of a commercial film, so the game has two frame sources:
+- **Official trailer (default).** The server looks up the movie's official YouTube trailer on TMDB. The page embeds it with YouTube's own player, muted, jumps to a random second (skipping the first ~10 s of studio logos and the closing title card) and pauses. The player is cropped so YouTube's title bar and logo are hidden, and a cover blocks clicks so nobody can unpause or open it. Nothing is downloaded or screenshotted.
+- **Movie database stills (fallback).** If a movie has no trailer, a random textless still from TMDB is shown instead.
+- **Exact frames from the picker's own video file.** The picker ticks "Use my own video file" and chooses a movie file on their device. In this mode the guesser calls a minute, the picker's browser seeks to it and sends just that one frame. The video never leaves the picker's computer.
 
-- **Movie database stills (default).** With a free TMDB key, the picker browses real movies filtered by the host's years and genres. Each film's textless stills are laid out across its running time, so minute 15 of a 120-minute film shows the still about 1/8 of the way through the set. These are real frames from the film, but not the frame at that exact second. TMDB also holds some fan posters, so the picker previews each still privately and can swap it before the guesser sees it.
-- **Exact frames from the picker's own video file.** The picker ticks "Use my own video file" and chooses a movie file on their device (MP4/H.264 or WebM). When the guesser calls a minute, the picker's browser seeks to it and sends just that one frame. The video never leaves the picker's computer. Streaming services (Netflix etc.) can't be used for this because their video is copy-protected.
+In every database round the picker previews the moment privately first and can roll a new one if it gives the title away.
 
-Without a TMDB key the server runs in demo mode with 8 made-up films, and the own-file mode still works with real movies (the picker types the exact title).
+Without a TMDB key the server runs in demo mode with 8 made-up films, and the own-file mode still works with real movies.
 
 ## Run it
 

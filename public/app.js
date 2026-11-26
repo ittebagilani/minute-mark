@@ -112,6 +112,7 @@
     else if (v.phase === 'lobby') $app.innerHTML = lobbyView();
     else $app.innerHTML = gameView();
 
+    mountPlayers();
     if (keep) {
       const el = document.getElementById(keep.id);
       if (el) {
@@ -139,11 +140,11 @@
       <div class="home-hero">
         <p class="eyebrow">A party game for 2 to 16 film fans</p>
         <h1>One frame.<br><span>Name the film.</span></h1>
-        <p class="lede">One player secretly picks a movie. The next picks a minute of it, sees the frame at that mark, and has three tries to name the exact title.</p>
+        <p class="lede">One player secretly picks a movie. The next sees one frozen moment from its trailer and has three tries to name the exact title.</p>
         <ol class="how">
           <li><span><b>The host sets the shelf:</b> a year or range of years and any mix of genres.</span></li>
           <li><span><b>The picker</b> chooses a movie in secret from that shelf.</span></li>
-          <li><span><b>The guesser</b> calls a minute, like minute 15, and sees that frame.</span></li>
+          <li><span><b>The guesser</b> sees a random paused moment from the movie's official trailer. Every miss shows a new moment.</span></li>
           <li><span><b>Exact title wins:</b> 3 points on the first try, 2 on the second, 1 on the third. Stump them and the picker scores 1.</span></li>
         </ol>
       </div>
@@ -280,6 +281,92 @@
     </div>`;
   }
 
+  // ---- frames: an image, or a paused moment of the official trailer --------
+  const fmtSec = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+
+  function momentHtml(a, opts = {}) {
+    const v = S.view;
+    if (a.kind === 'trailer') {
+      if (!v.trailer || a.at == null) return '<div class="screen wide"><div class="waiting">No moment yet</div></div>';
+      return `<div class="screen wide${opts.small ? ' small' : ''}">
+        <div class="yt-crop"><div class="yt-slot" data-key="${esc(v.trailer)}" data-at="${Number(a.at)}"></div></div>
+        <div class="yt-shield" aria-hidden="true"></div>
+        <div class="yt-cover">Rolling the trailer…</div>
+        <span class="tc" hidden>TRAILER</span>
+      </div>`;
+    }
+    const label = a.minute ? tc(a.minute) : 'STILL';
+    return `<div class="screen${opts.anim ? ' reveal-in' : ''}">
+      ${safeUrl(a.frame) ? `<img src="${esc(safeUrl(a.frame))}" alt="${opts.alt || 'A frame from the secret movie'}">` : '<div class="waiting">No frame</div>'}
+      <span class="tc">${label}</span>
+    </div>`;
+  }
+
+  let ytReady = null;
+  function loadYouTube() {
+    if (ytReady) return ytReady;
+    ytReady = new Promise((resolve, reject) => {
+      if (window.YT && window.YT.Player) return resolve(window.YT);
+      const prev = window.onYouTubeIframeAPIReady;
+      window.onYouTubeIframeAPIReady = () => { if (prev) prev(); resolve(window.YT); };
+      const tag = document.createElement('script');
+      tag.src = 'https://www.youtube.com/iframe_api';
+      tag.onerror = () => { ytReady = null; reject(new Error('YouTube blocked')); };
+      document.head.appendChild(tag);
+    });
+    return ytReady;
+  }
+
+  // Mount a muted player for each trailer slot, jump to the moment, let it
+  // render one frame, then pause. The shield on top blocks clicks so nobody
+  // can scrub, unpause or open the video on YouTube.
+  async function mountPlayers() {
+    const slots = [...$app.querySelectorAll('.yt-slot:not([data-mounted])')];
+    if (!slots.length) return;
+    let YT;
+    try { YT = await loadYouTube(); } catch {
+      slots.forEach((el) => { const c = el.closest('.screen').querySelector('.yt-cover'); if (c) c.textContent = 'YouTube could not load here. Check that it is not blocked.'; });
+      return;
+    }
+    for (const el of slots) {
+      if (!el.isConnected) continue;
+      el.dataset.mounted = '1';
+      const screen = el.closest('.screen');
+      const frac = Number(el.dataset.at) || 0;
+      let target = 0, paused = false;
+      new YT.Player(el, {
+        videoId: el.dataset.key,
+        width: '100%', height: '100%',
+        playerVars: { autoplay: 1, mute: 1, controls: 0, disablekb: 1, fs: 0, rel: 0, modestbranding: 1, iv_load_policy: 3, playsinline: 1, cc_load_policy: 0 },
+        events: {
+          onReady: (e) => {
+            const dur = e.target.getDuration() || 150;
+            // Skip the studio logos at the start and the title card at the end.
+            target = dur > 40 ? 10 + frac * (dur - 22) : frac * dur * 0.8;
+            e.target.mute();
+            e.target.seekTo(target, true);
+            e.target.playVideo();
+          },
+          onStateChange: (e) => {
+            if (e.data === YT.PlayerState.PLAYING && !paused) {
+              paused = true;
+              setTimeout(() => {
+                e.target.pauseVideo();
+                e.target.seekTo(target, true);
+                setTimeout(() => {
+                  screen.classList.add('yt-on');
+                  const tcEl = screen.querySelector('.tc');
+                  if (tcEl) { tcEl.textContent = `TRAILER ${fmtSec(target)}`; tcEl.hidden = false; }
+                }, 350);
+              }, 250);
+            }
+          },
+          onError: () => { const c = screen.querySelector('.yt-cover'); if (c) c.textContent = 'This trailer cannot be shown here. The picker can reroll or the host can skip.'; },
+        },
+      });
+    }
+  }
+
   function waiting(text) {
     return `<div class="panel"><div class="wait"><span class="reel-spin" aria-hidden="true"></span><span>${text}</span></div></div>`;
   }
@@ -408,20 +495,20 @@
     const v = S.view;
     const last = v.attempts[v.attempts.length - 1];
     if (v.you === v.pickerId && !v.useFile) {
-      return `<div class="screen">
-          ${safeUrl(last.frame) ? `<img src="${esc(safeUrl(last.frame))}" alt="Candidate frame at minute ${last.minute}">` : ''}
-          <span class="tc">${tc(last.minute)}</span>
-        </div>
+      const trailer = last.kind === 'trailer';
+      return `${momentHtml(last, { alt: 'Candidate frame' })}
         <div class="panel stack">
           <div>
-            <p class="eyebrow">Only you can see this · minute ${last.minute}</p>
-            <h2>Check the frame</h2>
+            <p class="eyebrow">Only you can see this · try ${v.attempts.length} of ${v.maxAttempts}</p>
+            <h2>Check the ${trailer ? 'moment' : 'frame'}</h2>
           </div>
-          <p class="muted">Movie databases sometimes hold fan posters or title cards. If this picture gives the movie away, swap it for another still.</p>
+          <p class="muted">${trailer
+            ? 'A random moment from the official trailer. If it shows the title, a logo or anything that gives the movie away, roll a new one.'
+            : 'This movie has no trailer, so this is a still from the movie database. If it gives the movie away (fan posters, title cards), swap it.'}</p>
           <div class="row">
             <button class="btn btn-primary btn-big" data-act="approve">Show it to ${esc(nameOf(v.guesserId))}</button>
-            <button class="btn" data-act="swap" ${v.stillsLeft > 0 ? '' : 'disabled'}>Swap for another still</button>
-            <span class="muted">${v.stillsLeft > 0 ? `${v.stillsLeft} more to choose from` : 'No more stills'}</span>
+            <button class="btn" data-act="swap" ${trailer || v.stillsLeft > 0 ? '' : 'disabled'}>${trailer ? 'Roll another moment' : 'Swap for another still'}</button>
+            ${trailer ? '' : `<span class="muted">${v.stillsLeft > 0 ? `${v.stillsLeft} more to choose from` : 'No more stills'}</span>`}
           </div>
         </div>`;
     }
@@ -436,7 +523,7 @@
              <input class="input" type="file" id="videoFile" accept="video/*">`}
       </div>`;
     }
-    return `<div class="screen"><div class="waiting">Rolling to ${tc(last.minute)}…<br>${esc(nameOf(v.pickerId))} is ${v.useFile ? 'grabbing' : 'checking'} the frame.</div></div>`;
+    return `<div class="screen"><div class="waiting">${v.useFile ? `Rolling to ${tc(last.minute)}…<br>${esc(nameOf(v.pickerId))} is grabbing the frame.` : `${esc(nameOf(v.pickerId))} is picking a moment for you…`}</div></div>`;
   }
 
   function guessView() {
@@ -445,10 +532,7 @@
     const tryNo = v.attempts.length;
     const guesser = v.you === v.guesserId;
     return `
-    <div class="screen reveal-in">
-      ${safeUrl(last.frame) ? `<img src="${esc(safeUrl(last.frame))}" alt="A frame from the secret movie at minute ${last.minute}">` : '<div class="waiting">No frame</div>'}
-      <span class="tc">${tc(last.minute)}</span>
-    </div>
+    ${momentHtml(last, { anim: true })}
     ${guesser ? `
       <form class="panel stack" data-form="guess">
         <div class="roundline">
@@ -469,12 +553,12 @@
 
   function reel(skipLast) {
     const v = S.view;
-    const list = v.attempts.filter((a, i) => a.guess != null && a.frame && !(skipLast && i === v.attempts.length - 1 && a.guess == null));
+    const list = v.attempts.filter((a) => a.guess != null && (a.frame || a.kind === 'trailer'));
     if (!list.length) return '';
     return `<div class="stack" style="gap:10px"><p class="eyebrow">Frames so far</p><div class="reel">${list.map((a) => `
       <div class="reel-item">
-        <div class="thumb">${safeUrl(a.frame) ? `<img src="${esc(safeUrl(a.frame))}" alt="Frame at minute ${a.minute}" loading="lazy">` : ''}</div>
-        <div class="cap"><span class="mono">${tc(a.minute)}</span> · ${a.correct ? '<span class="ok">✓</span>' : '<span class="x">✗</span>'} ${esc(a.guess)}</div>
+        <div class="thumb">${a.kind === 'trailer' ? '<span class="thumb-label">Trailer moment</span>' : safeUrl(a.frame) ? `<img src="${esc(safeUrl(a.frame))}" alt="Earlier frame" loading="lazy">` : ''}</div>
+        <div class="cap">${a.minute ? `<span class="mono">${tc(a.minute)}</span> · ` : ''}${a.correct ? '<span class="ok">✓</span>' : '<span class="x">✗</span>'} ${esc(a.guess)}</div>
       </div>`).join('')}</div></div>`;
   }
 
@@ -501,7 +585,8 @@
       ${m ? `<div class="reveal-card">
         ${safeUrl(m.poster) ? `<img src="${esc(safeUrl(m.poster))}" alt="Poster of ${esc(m.title)}">` : '<span></span>'}
         <div class="stack" style="gap:6px"><p class="eyebrow">The movie was</p><h2>${esc(m.title)}</h2>
-        <p class="muted">${[m.year, m.runtime ? m.runtime + ' min' : '', (m.genres || []).join(', ')].filter(Boolean).map(esc).join(' · ')}</p></div>
+        <p class="muted">${[m.year, m.runtime ? m.runtime + ' min' : '', (m.genres || []).join(', ')].filter(Boolean).map(esc).join(' · ')}</p>
+        ${v.trailer ? `<a class="btn btn-sm" style="justify-self:start" href="https://www.youtube.com/watch?v=${esc(v.trailer)}" target="_blank" rel="noopener">Watch the trailer</a>` : ''}</div>
       </div>` : ''}
       <div class="row">
         ${canNext ? `<button class="btn btn-primary btn-big" data-act="next">${last ? 'See final scores' : 'Next round'}</button>` : '<span class="muted">Waiting for the host to continue.</span>'}
@@ -713,7 +798,7 @@
       S.busy = true; render();
       const res = await send('guess', { text });
       S.busy = false;
-      if (res.ok && S.view.phase === 'minute') toast(`"${text}" is not it. Pick another minute.`, true);
+      if (res.ok && ['minute', 'capture'].includes(S.view.phase)) toast(`"${text}" is not it. ${S.view.useFile ? 'Pick another minute.' : 'Here comes another moment.'}`, true);
       render();
     }
   });

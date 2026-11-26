@@ -172,6 +172,20 @@ label.field { display: grid; gap: 6px; font-size: 14px; color: var(--dim); }
 .reel-item .cap .x { color: var(--exit); }
 .reel-item .cap .ok { color: var(--go); }
 
+/* Trailer moments: the player is scaled up inside a cropped box so YouTube's
+   title bar and logo fall outside it, and a shield blocks every click. */
+.screen.wide { aspect-ratio: 16 / 9; }
+.yt-crop { position: absolute; inset: 0; overflow: hidden; }
+.yt-crop iframe, .yt-crop .yt-slot { position: absolute; width: 124%; height: 124%; left: -12%; top: -12%; border: 0; pointer-events: none; }
+.yt-shield { position: absolute; inset: 0; z-index: 2; }
+.yt-cover {
+  position: absolute; inset: 0; z-index: 3; display: grid; place-items: center; text-align: center; padding: 20px;
+  background: #000; color: var(--dim); transition: opacity .4s ease;
+}
+.screen.yt-on .yt-cover { opacity: 0; pointer-events: none; }
+.screen .tc { z-index: 4; }
+.thumb-label { display: grid; place-items: center; height: 100%; font: 600 12px var(--mono); color: var(--dim); letter-spacing: .08em; text-transform: uppercase; }
+
 /* ---- minute dial ---- */
 .dial { display: grid; gap: 14px; }
 .timecode { font: 700 clamp(44px, 9vw, 84px)/1 var(--mono); letter-spacing: .02em; font-variant-numeric: tabular-nums; }
