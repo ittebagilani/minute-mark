@@ -46,7 +46,9 @@
     const h = Math.floor(min / 60), m = min % 60;
     return `<span class="h">${String(h).padStart(2, '0')}:</span>${String(m).padStart(2, '0')}<span class="s">:00</span>`;
   };
-  const nameOf = (id) => S.view?.players.find((p) => p.id === id)?.name || 'Someone';
+  const nameOf = (id) => (id === 'cpu' ? 'The computer' : S.view?.players.find((p) => p.id === id)?.name || 'Someone');
+  const TIME_CHOICES = [0, 15, 20, 30, 45, 60, 90, 120];
+  const timeLabel = (t) => (t ? `${t} seconds` : 'No timer');
   const me = () => S.view?.you;
   const isHost = () => S.view && S.view.hostId === me();
 
@@ -86,6 +88,7 @@
     if (json === S.lastJson) return;
     S.lastJson = json;
     S.view = v;
+    if (v.now) clockSkew = v.now - Date.now();
     store.sset('mm-room', v.code);
     render();
     afterState();
@@ -113,6 +116,7 @@
     else $app.innerHTML = gameView();
 
     mountPlayers();
+    tickTimers();
     if (!document.getElementById('guessInput')) sug.items = [];
     if (keep) {
       const el = document.getElementById(keep.id);
@@ -191,7 +195,7 @@
     return `
     <section class="home">
       <div class="home-hero">
-        <p class="eyebrow">A party game for 2 to 16 film fans</p>
+        <p class="eyebrow">A party game for 2 to 16 film fans, or play solo</p>
         <h1>One frame.<br><span>Name the film.</span></h1>
         <p class="lede">One player secretly picks a movie. The next sees one frozen frame from its trailer and has three tries to name the exact title.</p>
         <ol class="how">
@@ -206,6 +210,7 @@
           <input class="input" id="nameInput" maxlength="20" autocomplete="nickname" placeholder="e.g. Sam" value="${esc(name)}">
         </label>
         <button class="btn btn-primary btn-big" data-act="create">Create a room</button>
+        <button class="btn btn-big" data-act="solo">Play solo</button>
         <div class="or">or join one</div>
         <label class="field">Room code
           <input class="input input-code" id="codeInput" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD" value="${esc(code)}">
@@ -233,7 +238,56 @@
       </li>`).join('')}</ul>`;
   }
 
+  function timerFields(s, host) {
+    const sel = (id, val, label) => `<label class="field">${label}
+        <select class="input" id="${id}" ${host ? '' : 'disabled'}>
+          ${TIME_CHOICES.map((t) => `<option value="${t}" ${t === val ? 'selected' : ''}>${timeLabel(t)}</option>`).join('')}
+        </select>
+      </label>`;
+    return `<div class="years">
+        ${S.view.solo ? '' : sel('pickTime', s.pickTime, 'Time to pick a movie and a frame')}
+        ${sel('guessTime', s.guessTime, 'Time for each guess')}
+      </div>`;
+  }
+
+  function soloLobbyView() {
+    const v = S.view, s = v.settings;
+    const yearMax = S.meta.year;
+    const genreButtons = S.meta.genres.map((g) => `
+      <button class="genre" data-act="genre" data-id="${g.id}" aria-pressed="${s.genres.includes(g.id)}">${esc(g.name)}</button>`).join('');
+    return `
+    <section class="lobby solo">
+      <div class="panel stack">
+        <div>
+          <p class="eyebrow">Solo game</p>
+          <h2>Your shelf</h2>
+          <p class="muted">The computer picks a random movie from this shelf each round. You get three tries to name it.</p>
+        </div>
+        <div class="years">
+          <label class="field">From year
+            <input class="input mono" id="yearFrom" type="number" min="1920" max="${yearMax}" value="${s.yearFrom}">
+          </label>
+          <label class="field">To year
+            <input class="input mono" id="yearTo" type="number" min="1920" max="${yearMax}" value="${s.yearTo}">
+          </label>
+          <label class="field">Rounds
+            <select class="input" id="rounds">
+              ${[5, 10, 15, 20].map((k) => `<option value="${k}" ${k === s.rounds ? 'selected' : ''}>${k}</option>`).join('')}
+            </select>
+          </label>
+        </div>
+        ${timerFields(s, true)}
+        <div class="stack" style="gap:10px">
+          <div class="roundline"><span class="eyebrow">Genres</span><span class="muted" style="font-size:13px">${s.genres.length ? s.genres.length + ' picked' : 'None picked means any genre'}</span></div>
+          <div class="genres">${genreButtons}</div>
+        </div>
+        <div class="row"><button class="btn btn-primary btn-big" data-act="start">Start</button></div>
+      </div>
+    </section>`;
+  }
+
   function lobbyView() {
+    if (S.view.solo) return soloLobbyView();
     const v = S.view, s = v.settings, host = isHost();
     const link = `${location.origin}/?room=${v.code}`;
     const n = v.players.filter((p) => p.connected).length;
@@ -274,6 +328,7 @@
             </select>
           </label>
         </div>
+        ${timerFields(s, host)}
         <p class="notice">Same year in both boxes for a single year. Each player picks ${s.laps === 1 ? 'once' : s.laps + ' times'} and guesses ${s.laps === 1 ? 'once' : s.laps + ' times'}: ${n * s.laps} rounds with ${n} players.</p>
         <div class="stack" style="gap:10px">
           <div class="roundline"><span class="eyebrow">Genres</span><span class="muted" style="font-size:13px">${s.genres.length ? s.genres.length + ' picked' : 'None picked means any genre'}</span></div>
@@ -324,15 +379,40 @@
 
   function roundHeader() {
     const v = S.view;
+    const who = { pick: v.pickerId, capture: v.pickerId, guess: v.guesserId }[v.phase];
+    const what = { pick: 'to pick a movie', capture: 'to check the frame', guess: 'to guess' }[v.phase];
+    const timer = v.deadline && v.phase !== 'reveal'
+      ? `<div class="timer" data-deadline="${v.deadline}" data-total="${v.deadline - v.now}">
+          <div class="timer-bar"><span></span></div>
+          <span class="timer-text"><b class="mono">0:00</b> ${who === v.you ? 'left' : `for ${esc(nameOf(who))}`} ${what}</span>
+        </div>` : '';
     return `<div class="roundline">
       <div><p class="eyebrow">Round ${v.round} of ${v.totalRounds}</p></div>
-      <div class="roles">
+      ${v.solo ? '<div class="roles"><span class="role">Solo · the computer picked</span></div>' : `<div class="roles">
         <span class="role">Picker <b>${esc(nameOf(v.pickerId))}</b></span>
         <span class="role">·</span>
         <span class="role">Guesser <b>${esc(nameOf(v.guesserId))}</b></span>
-      </div>
-    </div>`;
+      </div>`}
+    </div>
+    ${timer}
+    ${v.notice && v.phase !== 'over' ? `<p class="notice">${esc(v.notice)}</p>` : ''}`;
   }
+
+  // Countdown display, refreshed without re-rendering the page.
+  let clockSkew = 0;
+  function tickTimers() {
+    for (const el of document.querySelectorAll('.timer[data-deadline]')) {
+      const left = Math.max(0, Number(el.dataset.deadline) - (Date.now() + clockSkew));
+      const total = Math.max(1, Number(el.dataset.total));
+      const secs = Math.ceil(left / 1000);
+      const b = el.querySelector('.timer-text b');
+      if (b) b.textContent = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+      const bar = el.querySelector('.timer-bar span');
+      if (bar) bar.style.width = `${Math.min(100, (left / total) * 100)}%`;
+      el.classList.toggle('low', secs <= 10);
+    }
+  }
+  setInterval(tickTimers, 250);
 
   // ---- frames: an image, or a paused moment of the official trailer --------
 
@@ -493,7 +573,9 @@
     const picker = you === v.pickerId, guesser = you === v.guesserId;
     switch (v.phase) {
       case 'pick':
-        return picker ? pickView() : waiting(`<b>${esc(nameOf(v.pickerId))}</b> is secretly choosing a movie.`);
+        return picker ? pickView()
+          : v.pickerId === 'cpu' ? waiting('The computer is choosing a movie for you…')
+          : waiting(`<b>${esc(nameOf(v.pickerId))}</b> is secretly choosing a movie.`);
       case 'minute':
         return (guesser ? minuteView() : waiting(`<b>${esc(nameOf(v.guesserId))}</b> is choosing a minute to look at.`) + pickerNote()) + reel();
       case 'capture':
@@ -543,7 +625,11 @@
         <input class="input" id="searchInput" placeholder="Search a title on this shelf" value="${esc(b.query)}" autocomplete="off">
         <button class="btn" type="submit">Search</button>
       </form>
-      ${b.query ? `<button class="btn btn-sm btn-ghost" data-act="clearSearch" style="justify-self:start">Back to popular picks</button>` : ''}
+      <div class="row">
+        <button class="btn btn-sm" data-act="surprise" ${S.busy ? 'disabled' : ''}>Surprise me (random movie)</button>
+        ${!b.query && b.totalPages > 1 ? '<button class="btn btn-sm btn-ghost" data-act="shuffle">Shuffle the shelf</button>' : ''}
+        ${b.query ? '<button class="btn btn-sm btn-ghost" data-act="clearSearch">Back to popular picks</button>' : ''}
+      </div>
       ${grid}
       ${!b.query && b.page < b.totalPages && b.results.length ? `<button class="btn btn-sm" data-act="more" style="justify-self:start" ${b.loading ? 'disabled' : ''}>More movies</button>` : ''}
       <div class="filebox">
@@ -666,6 +752,7 @@
         <div class="row">
           <button class="btn btn-primary btn-big" type="submit" ${S.busy ? 'disabled' : ''}>Lock in guess</button>
           <button class="btn btn-ghost" type="button" data-act="giveup">Give up</button>
+          ${v.solo ? '<button class="btn btn-ghost btn-sm" type="button" data-act="swap" title="Use this if the frame shows the title or a logo">Frame gives it away? New frame</button>' : ''}
         </div>
       </form>`
     : `${waiting(`<b>${esc(nameOf(v.guesserId))}</b> is studying the frame. Try ${tryNo} of ${v.maxAttempts}.`)}${pickerNote()}`}`;
@@ -691,10 +778,10 @@
       line = `${guesser} named it on try ${v.attempts.length} for <b>${r.points} point${r.points === 1 ? '' : 's'}</b>.`;
     } else if (r.how === 'stumped') {
       verdict = '<div class="verdict x">Stumped</div>';
-      line = `${picker} stumped ${guesser} and scores <b>${r.points} point</b>.`;
+      line = v.solo ? 'Out of tries. No points this round.' : `${picker} stumped ${guesser} and scores <b>${r.points} point</b>.`;
     } else {
       verdict = '<div class="verdict">Skipped</div>';
-      line = 'The host skipped this round. No points.';
+      line = v.notice || (v.solo ? 'Round skipped. No points.' : 'The host skipped this round. No points.');
     }
     const canNext = [v.hostId, v.pickerId, v.guesserId].includes(v.you);
     const last = v.round >= v.totalRounds;
@@ -723,12 +810,13 @@
     const rows = v.history.map((h) => `<tr>
       <td class="mono">${h.round}</td><td>${esc(h.title)}${h.year ? ` <span class="muted">(${h.year})</span>` : ''}</td>
       <td>${esc(nameOf(h.pickerId))}</td><td>${esc(nameOf(h.guesserId))}</td>
-      <td>${h.how === 'solved' ? `Solved, +${h.points}` : h.how === 'stumped' ? `Stumped, picker +${h.points}` : 'Skipped'}</td></tr>`).join('');
+      <td>${h.how === 'solved' ? `Solved, +${h.points}` : h.how === 'stumped' ? (v.solo ? 'Missed' : `Stumped, picker +${h.points}`) : 'Skipped'}</td></tr>`).join('');
     return `
     <div class="panel stack">
       <p class="eyebrow">Final scores</p>
-      <h1 style="font-size:clamp(40px,7vw,72px)">${tie.length > 1 ? 'A tie at the top' : `${esc(top.name)} wins`}</h1>
-      <p class="lede">${tie.length > 1 ? esc(tie.map((p) => p.name).join(' and ')) + ` share ${top.score} points.` : `${top.score} point${top.score === 1 ? '' : 's'} after ${v.totalRounds} rounds.`}</p>
+      ${v.solo ? `<h1 style="font-size:clamp(40px,7vw,72px)">${top.score} point${top.score === 1 ? '' : 's'}</h1>
+      <p class="lede">You named ${v.history.filter((h) => h.how === 'solved').length} of ${v.history.length} movies. The best possible score was ${v.history.length * v.points[0]}.</p>` : `<h1 style="font-size:clamp(40px,7vw,72px)">${tie.length > 1 ? 'A tie at the top' : `${esc(top.name)} wins`}</h1>
+      <p class="lede">${tie.length > 1 ? esc(tie.map((p) => p.name).join(' and ')) + ` share ${top.score} points.` : `${top.score} point${top.score === 1 ? '' : 's'} after ${v.totalRounds} rounds.`}</p>`}
       ${v.history.length ? `<div class="table-wrap"><table class="history">
         <thead><tr><th>Rd</th><th>Movie</th><th>Picker</th><th>Guesser</th><th>Result</th></tr></thead>
         <tbody>${rows}</tbody></table></div>` : ''}
@@ -835,9 +923,10 @@
     const act = el.dataset.act;
     const v = S.view;
     switch (act) {
-      case 'create': {
+      case 'create':
+      case 'solo': {
         const name = needName(); if (!name) return;
-        await send('create', { name, playerId });
+        await send('create', { name, playerId, solo: act === 'solo' });
         history.replaceState(null, '', '/');
         break;
       }
@@ -875,6 +964,14 @@
         break;
       }
       case 'more': loadMovies(S.browse.page + 1, true); break;
+      case 'shuffle': loadMovies(1 + Math.floor(Math.random() * Math.min(S.browse.totalPages, 50))); break;
+      case 'surprise': {
+        S.busy = true; render();
+        const res = await send('surprise');
+        S.busy = false; render();
+        if (res.ok) toast('The computer picked a movie for you.');
+        break;
+      }
       case 'clearSearch': S.browse.query = ''; loadMovies(1); break;
       case 'lock': {
         const b = S.browse, f = S.file;
@@ -951,7 +1048,7 @@
     const t = e.target, v = S.view;
     if (t.id === 'useFile') { S.file.useFile = t.checked; render(); }
     else if (t.id === 'videoFile') loadVideoFile(t.files[0]);
-    else if (['yearFrom', 'yearTo', 'laps'].includes(t.id) && isHost()) {
+    else if (['yearFrom', 'yearTo', 'laps', 'rounds', 'pickTime', 'guessTime'].includes(t.id) && isHost()) {
       const s = { ...v.settings };
       s[t.id] = Number(t.value);
       if (t.id === 'yearFrom' && s.yearTo < s.yearFrom) s.yearTo = s.yearFrom;

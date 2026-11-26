@@ -126,3 +126,44 @@ test('clip verification rejects sequels, TV and wrong years', () => {
   assert.ok(verifyClip("Harry Potter and the Sorcerer's Stone (2001) - Gringotts Scene", hp));
   assert.ok(!verifyClip('Harry Potter and the Chamber of Secrets (2002) - Dobby', hp));
 });
+
+test('solo game: the computer picks, the player guesses', async () => {
+  const r = new Room('SOLO', new DemoProvider(), { solo: true });
+  let pushes = 0; r.onAsync = () => { pushes++; };
+  r.join('aaaaaaaa', 'Ann');
+  assert.throws(() => r.join('bbbbbbbb', 'Ben'), /solo/);
+  r.updateSettings('aaaaaaaa', { yearFrom: 1990, yearTo: 2024, genres: [], rounds: 5, guessTime: 30 });
+  r.start('aaaaaaaa');
+  assert.equal(r.totalRounds, 5);
+  assert.equal(r.pickerId, 'cpu');
+  await new Promise((ok) => setTimeout(ok, 20));
+  assert.ok(pushes >= 1);
+  assert.equal(r.phase, 'guess'); // no picker to vet the frame
+  assert.ok(r.deadline > Date.now());
+  assert.equal(r.viewFor('aaaaaaaa').movie, null);
+  const first = r.movie.id;
+  r.guess('aaaaaaaa', r.movie.title);
+  assert.equal(r.phase, 'reveal');
+  assert.equal(r.player('aaaaaaaa').score, 3);
+  r.next('aaaaaaaa');
+  await new Promise((ok) => setTimeout(ok, 20));
+  assert.notEqual(r.movie.id, first); // no repeats in one game
+});
+
+test('timers: a guess runs out, and a slow picker gets a computer pick', async () => {
+  const r = new Room('TIME', new DemoProvider());
+  r.join('aaaaaaaa', 'Ann'); r.join('bbbbbbbb', 'Ben');
+  r.updateSettings('aaaaaaaa', { yearFrom: 1990, yearTo: 2024, genres: [], laps: 1, pickTime: 15, guessTime: 20 });
+  r.start('aaaaaaaa');
+  assert.ok(r.deadline);
+  await r.tick(r.deadline + 1); // picker too slow
+  assert.equal(r.phase, 'capture');
+  assert.match(r.notice, /computer picked/);
+  r.tick(r.deadline + 1); // frame not checked in time: shown anyway
+  assert.equal(r.phase, 'guess');
+  r.tick(r.deadline + 1); // guess too slow: counts as a miss
+  assert.equal(r.attempts[0].guess, '(out of time)');
+  assert.equal(r.attempts[0].correct, false);
+  assert.equal(r.attempts.length, 2);
+  assert.throws(() => r.updateSettings('aaaaaaaa', { pickTime: 0 }), /locked/);
+});

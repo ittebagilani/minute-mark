@@ -274,3 +274,13 @@ input[type="range"] { width: 100%; accent-color: var(--tungsten); height: 28px; 
 /* still frame from YouTube's own frame images: no player, no play icon */
 .yt-still { background: #000; }
 .yt-still img { width: 100%; height: 100%; object-fit: cover; user-select: none; -webkit-user-drag: none; }
+
+/* countdown */
+.timer { display: grid; gap: 6px; }
+.timer-bar { height: 6px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.timer-bar span { display: block; height: 100%; width: 100%; background: var(--tungsten); border-radius: inherit; transition: width .25s linear; }
+.timer-text { font-size: 14px; color: var(--dim); }
+.timer-text b { color: var(--screen); font-size: 16px; }
+.timer.low .timer-bar span { background: var(--exit); }
+.timer.low .timer-text b { color: var(--exit); }
+.lobby.solo { grid-template-columns: minmax(0, 720px); justify-content: center; }

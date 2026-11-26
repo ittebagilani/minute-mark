@@ -81,8 +81,9 @@ io.on('connection', (socket) => {
     broadcast(room);
   };
 
-  socket.on('create', guard(({ playerId, name }) => {
-    const room = new Room(makeCode(new Set(rooms.keys())), provider);
+  socket.on('create', guard(({ playerId, name, solo }) => {
+    const room = new Room(makeCode(new Set(rooms.keys())), provider, { solo: !!solo });
+    room.onAsync = () => broadcast(room);
     rooms.set(room.code, room);
     return enter(room, playerId, name);
   }));
@@ -132,6 +133,15 @@ io.on('connection', (socket) => {
     return out;
   }));
 
+  // The picker can let the computer choose ("Surprise me").
+  socket.on('surprise', guard(async () => {
+    const room = currentRoom();
+    if (socket.data.playerId !== room.pickerId || room.phase !== 'pick') throw new Error('Only the picker can do that now.');
+    await room.cpuPick();
+    if (room.phase === 'pick') throw new Error('Could not find a movie on this shelf. Try again or pick one.');
+    broadcast(room);
+  }));
+
   socket.on('suggest', guard(async ({ query }) => {
     currentRoom();
     const q = String(query || '').trim().slice(0, 80);
@@ -141,6 +151,16 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => leaveCurrent());
 });
+
+// Countdowns: act on any room whose timer has run out.
+setInterval(() => {
+  const now = Date.now();
+  for (const room of rooms.values()) {
+    if (!room.deadline || now < room.deadline) continue;
+    Promise.resolve(room.tick(now)).then(() => broadcast(room), (e) => { console.warn('Timer:', e.message); broadcast(room); });
+    broadcast(room);
+  }
+}, 500).unref();
 
 // Close rooms nobody has touched for 3 hours.
 setInterval(() => {
