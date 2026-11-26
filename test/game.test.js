@@ -85,7 +85,7 @@ test('file mode needs a frame from the picker', async () => {
 test('trailer rounds use random moments the picker can reroll', async () => {
   const prov = new DemoProvider();
   const orig = prov.details.bind(prov);
-  prov.details = async (id) => ({ ...(await orig(id)), trailerKey: 'abcDEF12345' });
+  prov.details = async (id) => ({ ...(await orig(id)), trailerKey: 'abcDEF12345', videos: [{ key: 'abcDEF12345', kind: 'trailer' }, { key: 'clipKEY0001', kind: 'clip' }] });
   const r = new Room('TRLR', prov);
   r.join('aaaaaaaa', 'Ann'); r.join('bbbbbbbb', 'Ben');
   r.start('aaaaaaaa');
@@ -94,11 +94,13 @@ test('trailer rounds use random moments the picker can reroll', async () => {
   const v = r.viewFor('bbbbbbbb');
   assert.equal(v.attempts[0].at, null);
   assert.equal(v.attempts[0].kind, 'trailer');
-  const at = r.attempts[0].at;
+  const first = r.attempts[0].video;
   r.swapFrame('aaaaaaaa');
-  assert.notEqual(r.attempts[0].at, at);
+  assert.notEqual(r.attempts[0].video, first); // rerolls to the unseen video
+  assert.equal(r.viewFor('bbbbbbbb').attempts[0].video, null);
   r.approveFrame('aaaaaaaa');
-  assert.equal(r.viewFor('bbbbbbbb').trailer, 'abcDEF12345');
+  assert.ok(['abcDEF12345', 'clipKEY0001'].includes(r.viewFor('bbbbbbbb').attempts[0].video));
+  assert.equal(r.viewFor('bbbbbbbb').trailer, null);
   assert.ok(r.viewFor('bbbbbbbb').attempts[0].at >= 0);
   r.guess('bbbbbbbb', 'wrong');
   assert.equal(r.phase, 'capture');

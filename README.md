@@ -14,6 +14,7 @@ Guesses must name the full title. Capitals, punctuation, accents, `&`/`and`, a l
 ## Where the frames come from
 
 - **Official trailer (default).** The server looks up the movie's official YouTube trailer on TMDB. The page embeds it with YouTube's own player, muted, jumps to a random second (skipping the first ~10 s of studio logos and the closing title card) and pauses. The player is cropped so YouTube's title bar and logo are hidden, and a cover blocks clicks so nobody can unpause or open it. Nothing is downloaded or screenshotted.
+- **Official scene clips (optional).** With a `YOUTUBE_API_KEY`, the server also searches YouTube for embeddable scene clips of the movie, keeps ones whose title names the film (dropping trailers, reviews, reactions, edits and shorts), and ranks studio and licensed clip channels such as Movieclips first. Each moment picks a random video from the trailer and clips. One search uses 100 of YouTube's 10,000 free daily quota units, and results are cached per movie for a day, so about 100 new movies a day are covered.
 - **Movie database stills (fallback).** If a movie has no trailer, a random textless still from TMDB is shown instead.
 - **Exact frames from the picker's own video file.** The picker ticks "Use my own video file" and chooses a movie file on their device. In this mode the guesser calls a minute, the picker's browser seeks to it and sends just that one frame. The video never leaves the picker's computer.
 
@@ -25,7 +26,7 @@ Without a TMDB key the server runs in demo mode with 8 made-up films, and the ow
 
 ```bash
 npm install
-TMDB_API_KEY=your_key npm start   # http://localhost:3000
+TMDB_API_KEY=your_key YOUTUBE_API_KEY=optional_key npm start   # http://localhost:3000
 ```
 
 Get a free key at https://www.themoviedb.org/settings/api (either the v3 "API Key" or the v4 "Read Access Token" works).
