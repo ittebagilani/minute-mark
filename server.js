@@ -11,7 +11,8 @@ const rooms = new Map();
 
 const app = express();
 app.disable('x-powered-by');
-app.use(express.static(path.join(__dirname, 'public'), { maxAge: '1h' }));
+// Revalidate every load so players never run an old client after a deploy.
+app.use(express.static(path.join(__dirname, 'public'), { maxAge: 0, etag: true, lastModified: true, setHeaders: (res) => res.set('Cache-Control', 'no-cache') }));
 
 app.get('/api/meta', (_req, res) => res.json({ genres: GENRES, provider: provider.name, year: new Date().getFullYear() }));
 app.get('/healthz', (_req, res) => res.send('ok'));
