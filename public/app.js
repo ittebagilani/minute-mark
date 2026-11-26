@@ -334,8 +334,21 @@
       const screen = el.closest('.screen');
       const frac = Number(el.dataset.at) || 0;
       const srcLabel = el.dataset.src || 'TRAILER';
-      let target = 0, paused = false;
-      new YT.Player(el, {
+      let target = 0, paused = false, ready = false;
+      const roll = (p) => { p.mute(); p.seekTo(target, true); p.playVideo(); };
+      // Some browsers block autoplay. If the moment hasn't appeared after a few
+      // seconds, offer a tap: a click on our own button counts as permission.
+      const stuck = setTimeout(() => {
+        if (screen.classList.contains('yt-on') || !screen.isConnected) return;
+        const c = screen.querySelector('.yt-cover');
+        if (!c) return;
+        c.innerHTML = '<button class="btn btn-primary" type="button">Tap to show the moment</button>';
+        c.querySelector('button').addEventListener('click', () => {
+          c.textContent = 'Rolling the trailer…';
+          if (ready) roll(player);
+        });
+      }, 4000);
+      const player = new YT.Player(el, {
         videoId: el.dataset.key,
         width: '100%', height: '100%',
         playerVars: { autoplay: 1, mute: 1, controls: 0, disablekb: 1, fs: 0, rel: 0, modestbranding: 1, iv_load_policy: 3, playsinline: 1, cc_load_policy: 0 },
@@ -344,9 +357,8 @@
             const dur = e.target.getDuration() || 150;
             // Skip the studio logos at the start and the title card at the end.
             target = dur > 40 ? 10 + frac * (dur - 22) : frac * dur * 0.8;
-            e.target.mute();
-            e.target.seekTo(target, true);
-            e.target.playVideo();
+            ready = true;
+            roll(e.target);
           },
           onStateChange: (e) => {
             if (e.data === YT.PlayerState.PLAYING && !paused) {
@@ -355,6 +367,7 @@
                 e.target.pauseVideo();
                 e.target.seekTo(target, true);
                 setTimeout(() => {
+                  clearTimeout(stuck);
                   screen.classList.add('yt-on');
                   const tcEl = screen.querySelector('.tc');
                   if (tcEl) { tcEl.textContent = `${srcLabel} ${fmtSec(target)}`; tcEl.hidden = false; }
