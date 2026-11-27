@@ -94,9 +94,9 @@ test('trailer rounds use random moments the picker can reroll', async () => {
   const v = r.viewFor('bbbbbbbb');
   assert.equal(v.attempts[0].at, null);
   assert.equal(v.attempts[0].kind, 'trailer');
-  const first = r.attempts[0].video;
+  const first = r.attempts[0].video + r.attempts[0].shot;
   r.swapFrame('aaaaaaaa');
-  assert.notEqual(r.attempts[0].video, first); // rerolls to the unseen video
+  assert.notEqual(r.attempts[0].video + r.attempts[0].shot, first); // rerolls to an unseen frame
   assert.equal(r.viewFor('bbbbbbbb').attempts[0].video, null);
   r.approveFrame('aaaaaaaa');
   assert.ok(['abcDEF12345', 'clipKEY0001'].includes(r.viewFor('bbbbbbbb').attempts[0].video));
